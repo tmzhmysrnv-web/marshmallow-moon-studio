@@ -1,5 +1,5 @@
 // ============================================================
-// Storage — SQLite locally, in-memory + Vercel Blob on serverless
+// Storage — SQLite locally, in-memory + JSON file on serverless
 // ============================================================
 
 import path from "path";
@@ -20,81 +20,76 @@ declare global {
   var __marshmallowStore: InMemoryStore | undefined;
 }
 
-function getStore(): InMemoryStore {
-  if (!globalThis.__marshmallowStore) {
-    globalThis.__marshmallowStore = {
-      characters: [],
-      worlds: [],
-      stories: [],
-      illustrations: [],
-      videos: [],
-      socialPosts: [],
-      printExports: [],
-    };
-    // Load from Vercel Blob asynchronously
-    loadFromBlob();
+// File path for JSON persistence
+function getPersistPath(): string {
+  if (process.env.VERCEL || process.env.VERCEL_ENV) {
+    return path.join("/tmp", "marshmallow-moon-store.json");
   }
-  return globalThis.__marshmallowStore;
+  return path.resolve("data", "marshmallow-moon-store.json");
 }
 
-// Vercel Blob persistence
-const BLOB_PATH = "marshmallow-moon-store.json";
-let blobToken: string | null = null;
-
-async function getBlobToken(): Promise<string | null> {
-  if (blobToken) return blobToken;
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
-    blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-    return blobToken;
+// Load store from JSON file
+function loadFromFile(): InMemoryStore | null {
+  try {
+    const filePath = getPersistPath();
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, "utf-8");
+      const data = JSON.parse(raw);
+      if (data && typeof data === "object") {
+        console.log("✓ Loaded persisted data:", Object.values(data).reduce((s: number, a: any) => s + (a?.length || 0), 0), "records from", filePath);
+        return {
+          characters: data.characters || [],
+          worlds: data.worlds || [],
+          stories: data.stories || [],
+          illustrations: data.illustrations || [],
+          videos: data.videos || [],
+          socialPosts: data.socialPosts || [],
+          printExports: data.printExports || [],
+        };
+      }
+    }
+  } catch (e) {
+    console.warn("Failed to load persisted data:", (e as Error).message);
   }
   return null;
 }
 
-async function loadFromBlob() {
+// Save store to JSON file
+function saveToFile() {
   try {
-    const token = await getBlobToken();
-    if (!token) return;
-
-    const { list, del } = await import("@vercel/blob");
-    const { blobs } = await list({ token });
-    const existing = blobs.find((b) => b.pathname === BLOB_PATH);
-    if (!existing) return;
-
-    const response = await fetch(existing.url);
-    const data = await response.json();
-    if (data && typeof data === "object") {
-      const store = getStore();
-      for (const key of Object.keys(store) as (keyof InMemoryStore)[]) {
-        if (Array.isArray(data[key])) {
-          store[key] = data[key];
-        }
-      }
-      console.log("✓ Loaded from Vercel Blob:", Object.values(data).reduce((sum: number, arr: any) => sum + (arr?.length || 0), 0), "records");
-    }
+    const store = getStore();
+    const filePath = getPersistPath();
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(store, null, 2));
   } catch (e) {
-    console.warn("Blob load failed, using in-memory:", (e as Error).message);
+    console.warn("Failed to persist data:", (e as Error).message);
   }
 }
 
-async function saveToBlob() {
-  try {
-    const token = await getBlobToken();
-    if (!token) return;
-
-    const { put } = await import("@vercel/blob");
-    const store = getStore();
-    await put(BLOB_PATH, JSON.stringify(store), {
-      access: "public",
-      contentType: "application/json",
-      token,
-    });
-  } catch (e) {
-    console.warn("Blob save failed:", (e as Error).message);
+function getStore(): InMemoryStore {
+  if (!globalThis.__marshmallowStore) {
+    // Try loading from persisted file first
+    const persisted = loadFromFile();
+    if (persisted) {
+      globalThis.__marshmallowStore = persisted;
+    } else {
+      globalThis.__marshmallowStore = {
+        characters: [],
+        worlds: [],
+        stories: [],
+        illustrations: [],
+        videos: [],
+        socialPosts: [],
+        printExports: [],
+      };
+    }
   }
+  return globalThis.__marshmallowStore;
 }
 
 function persistAfterMutation() {
-  saveToBlob().catch(() => {});
+  saveToFile();
 }
 
 // Simple in-memory query builder
