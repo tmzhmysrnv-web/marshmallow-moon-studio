@@ -90,21 +90,48 @@ Make it magical, gentle, and perfect for bedtime reading. Include all characters
 }
 
 export async function generateStoryWithAnthropic(input: StoryGenerationInput) {
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
 
-  const response = await anthropic.messages.create({
-    model: "claude-3-5-sonnet-20241022",
-    max_tokens: 4096,
-    system: buildStorySystemPrompt(input),
-    messages: [{ role: "user", content: buildStoryUserPrompt(input) }],
-  });
+  const anthropic = new Anthropic({ apiKey });
 
-  const content = response.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("");
+  let lastError: any;
+  
+  // Try multiple model names in order of preference
+  const models = [
+    "claude-sonnet-4-20250514",
+    "claude-3-5-sonnet-20241022",
+    "claude-3-opus-20240229",
+  ];
 
-  return content;
+  for (const model of models) {
+    try {
+      console.log(`Trying Anthropic model: ${model}`);
+      const response = await anthropic.messages.create({
+        model,
+        max_tokens: 4096,
+        system: buildStorySystemPrompt(input),
+        messages: [{ role: "user", content: buildStoryUserPrompt(input) }],
+      });
+
+      const content = response.content
+        .filter((block) => block.type === "text")
+        .map((block) => block.text)
+        .join("");
+
+      console.log(`✓ Story generated with model: ${model}`);
+      return content;
+    } catch (e: any) {
+      console.warn(`Model ${model} failed:`, e.status || e.message);
+      lastError = e;
+      // If it's a 401 (unauthorized), don't retry
+      if (e.status === 401) break;
+    }
+  }
+
+  throw new Error(
+    `All Anthropic models failed. Last error: ${lastError?.status || ""} ${lastError?.message || lastError}`
+  );
 }
 
 export async function generateStoryWithOpenAI(input: StoryGenerationInput) {
