@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
         const Anthropic = await import("@anthropic-ai/sdk");
         const anthropic = new Anthropic.default({ apiKey: process.env.ANTHROPIC_API_KEY! });
         const refined = await anthropic.messages.create({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           max_tokens: 500,
           system: "You refine illustration prompts for an AI image generator. Make the prompt more vivid, detailed, and visually specific. Keep it to 2-3 sentences. Output ONLY the refined prompt, nothing else.",
           messages: [{ role: "user", content: `Refine this children's book illustration prompt:\n\n${composed.text}` }],

@@ -99,9 +99,9 @@ export async function generateStoryWithAnthropic(input: StoryGenerationInput) {
   
   // Try multiple model names in order of preference
   const models = [
-    "claude-sonnet-4-20250514",
-    "claude-3-5-sonnet-20241022",
-    "claude-3-opus-20240229",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5-20251001",
+    "claude-opus-4-8",
   ];
 
   for (const model of models) {
