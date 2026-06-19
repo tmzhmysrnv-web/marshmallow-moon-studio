@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --color-card: var(--card-bg);
+  --color-card-border: var(--card-b);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-fg);
+  --color-gold: var(--gold);
+  --color-gold-dim: var(--gold-d);
+  --color-sky: var(--sky);
+  --color-sky-dim: var(--sky-d);
+  --color-night: var(--night);
+  --color-night-surface: var(--night-s);
+  --color-night-border: var(--night-b);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+:root {
+  --bg: #0a0a0f;
+  --fg: #f1f5f9;
+  --card-bg: rgba(15, 23, 42, 0.6);
+  --card-b: rgba(148, 163, 184, 0.08);
+  --muted: #64748b;
+  --accent: #6366f1;
+  --accent-fg: #e0e7ff;
+  --gold: #fbbf24;
+  --gold-d: #b45309;
+  --sky: #38bdf8;
+  --sky-d: #0369a1;
+  --night: #020617;
+  --night-s: #0f172a;
+  --night-b: #1e293b;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+.glass {
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(148, 163, 184, 0.08);
+  border-radius: 1rem;
+}
+
+.glass-hover:hover {
+  border-color: rgba(251, 191, 36, 0.3);
+  background: rgba(15, 23, 42, 0.8);
+}
+
+.text-gold-gradient {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-sky-gradient {
+  background: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
