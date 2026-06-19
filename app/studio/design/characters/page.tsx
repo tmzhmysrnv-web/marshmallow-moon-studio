@@ -88,8 +88,20 @@ export default function CharactersPage() {
           <Link
             key={char.id}
             href={`/studio/design/characters/${char.id}`}
+            prefetch={true}
             className="group glass glass-hover p-5 transition-all duration-200"
           >
+            {/* Reference image thumbnail */}
+            {char.referenceImages && char.referenceImages.length > 0 && (
+              <div className="w-full aspect-video rounded-lg overflow-hidden mb-3 bg-night-surface">
+                <img
+                  src={char.referenceImages[0]}
+                  alt={char.name}
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  loading="lazy"
+                />
+              </div>
+            )}
             {/* Species badge */}
             <div className="flex items-center gap-2 mb-3">
               <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">

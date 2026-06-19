@@ -82,6 +82,7 @@ export default function CharacterDetailPage() {
       traits,
       catchphrases,
       voiceId: voiceId || null,
+      referenceImages: character?.referenceImages || [],
     };
 
     const url = isNew ? "/api/design/characters" : `/api/design/characters/${params.id}`;
@@ -322,14 +323,79 @@ export default function CharacterDetailPage() {
           />
         </div>
 
-        {/* Reference Images placeholder */}
-        <div className="glass p-6 text-center">
-          <p className="text-sm text-muted mb-2">
-            📷 Reference images upload coming soon
-          </p>
-          <p className="text-xs text-slate-600">
-            You&apos;ll be able to upload 2-3 reference poses per character for consistent AI illustration generation
-          </p>
+        {/* Reference Images */}
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-1.5">
+            Reference Images{" "}
+            <span className="text-xs text-muted">(2-3 poses for AI consistency)</span>
+          </label>
+
+          {/* Existing reference images */}
+          {character?.referenceImages && character.referenceImages.length > 0 && (
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              {character.referenceImages.map((url, i) => (
+                <div key={i} className="relative aspect-square rounded-lg overflow-hidden bg-night-surface border border-night-border group">
+                  <img src={url} alt={`Reference ${i + 1}`} className="w-full h-full object-cover" />
+                  <button
+                    onClick={() => {
+                      const updated = character.referenceImages.filter((_, j) => j !== i);
+                      setCharacter({ ...character, referenceImages: updated });
+                    }}
+                    className="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-500/80 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Upload area */}
+          <div className="border-2 border-dashed border-night-border rounded-lg p-6 text-center hover:border-gold/30 transition-colors">
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              multiple
+              onChange={async (e) => {
+                const files = e.target.files;
+                if (!files || files.length === 0) return;
+
+                const newUrls: string[] = [];
+                for (const file of Array.from(files)) {
+                  const formData = new FormData();
+                  formData.append("file", file);
+
+                  try {
+                    const res = await fetch("/api/upload", { method: "POST", body: formData });
+                    const data = await res.json();
+                    if (res.ok && data.url) {
+                      newUrls.push(data.url);
+                    }
+                  } catch {
+                    // skip failed uploads
+                  }
+                }
+
+                if (newUrls.length > 0) {
+                  const updated = [...(character?.referenceImages || []), ...newUrls].slice(0, 5);
+                  if (character) {
+                    setCharacter({ ...character, referenceImages: updated });
+                  }
+                }
+              }}
+              className="hidden"
+              id="ref-image-upload"
+            />
+            <label htmlFor="ref-image-upload" className="cursor-pointer">
+              <div className="text-3xl mb-2">📷</div>
+              <p className="text-sm text-slate-400 mb-1">
+                Click to upload reference images
+              </p>
+              <p className="text-xs text-slate-600">
+                PNG, JPEG, or WEBP · Max 5MB each · Up to 5 images
+              </p>
+            </label>
+          </div>
         </div>
 
         {character?.createdAt && (
