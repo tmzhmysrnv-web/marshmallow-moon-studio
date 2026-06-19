@@ -1,11 +1,11 @@
 // ============================================================
-// Storage — SQLite locally, in-memory on Vercel serverless
+// Storage — SQLite locally, in-memory + Vercel Blob on serverless
 // ============================================================
 
 import path from "path";
 import fs from "fs";
 
-// In-memory store for Vercel serverless (where native SQLite can't run)
+// In-memory store
 interface InMemoryStore {
   characters: any[];
   worlds: any[];
@@ -31,11 +31,73 @@ function getStore(): InMemoryStore {
       socialPosts: [],
       printExports: [],
     };
+    // Load from Vercel Blob asynchronously
+    loadFromBlob();
   }
   return globalThis.__marshmallowStore;
 }
 
-// Simple in-memory query builder that mimics drizzle-orm
+// Vercel Blob persistence
+const BLOB_PATH = "marshmallow-moon-store.json";
+let blobToken: string | null = null;
+
+async function getBlobToken(): Promise<string | null> {
+  if (blobToken) return blobToken;
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+    return blobToken;
+  }
+  return null;
+}
+
+async function loadFromBlob() {
+  try {
+    const token = await getBlobToken();
+    if (!token) return;
+
+    const { list, del } = await import("@vercel/blob");
+    const { blobs } = await list({ token });
+    const existing = blobs.find((b) => b.pathname === BLOB_PATH);
+    if (!existing) return;
+
+    const response = await fetch(existing.url);
+    const data = await response.json();
+    if (data && typeof data === "object") {
+      const store = getStore();
+      for (const key of Object.keys(store) as (keyof InMemoryStore)[]) {
+        if (Array.isArray(data[key])) {
+          store[key] = data[key];
+        }
+      }
+      console.log("✓ Loaded from Vercel Blob:", Object.values(data).reduce((sum: number, arr: any) => sum + (arr?.length || 0), 0), "records");
+    }
+  } catch (e) {
+    console.warn("Blob load failed, using in-memory:", (e as Error).message);
+  }
+}
+
+async function saveToBlob() {
+  try {
+    const token = await getBlobToken();
+    if (!token) return;
+
+    const { put } = await import("@vercel/blob");
+    const store = getStore();
+    await put(BLOB_PATH, JSON.stringify(store), {
+      access: "public",
+      contentType: "application/json",
+      token,
+    });
+  } catch (e) {
+    console.warn("Blob save failed:", (e as Error).message);
+  }
+}
+
+function persistAfterMutation() {
+  saveToBlob().catch(() => {});
+}
+
+// Simple in-memory query builder
 function createQuery<T>(table: keyof InMemoryStore) {
   const store = getStore();
   return {
@@ -57,6 +119,7 @@ function createInsert(table: keyof InMemoryStore) {
     values: (record: any) => ({
       run: () => {
         getStore()[table].push(record);
+        persistAfterMutation();
       },
     }),
   };
@@ -70,6 +133,7 @@ function createUpdate(table: keyof InMemoryStore) {
           const idx = getStore()[table].findIndex((r: any) => r.id === _value);
           if (idx >= 0) {
             getStore()[table][idx] = { ...getStore()[table][idx], ...data };
+            persistAfterMutation();
           }
         },
       }),
@@ -82,6 +146,7 @@ function createDelete(table: keyof InMemoryStore) {
     where: (_field: string, _value: string) => ({
       run: () => {
         getStore()[table] = getStore()[table].filter((r: any) => r[_field] !== _value);
+        persistAfterMutation();
       },
     }),
   };
