@@ -22,35 +22,46 @@ export async function POST(req: NextRequest) {
     const characterIds: string[] = body.characterIds || [];
     const worldId: string = body.worldId || "";
 
-    // First check if characters exist, auto-seed if not
-    let allChars = db.select().from(characters).all();
+    // Auto-seed directly (don't call other APIs — they're different serverless instances)
     if (allChars.length === 0) {
-      // Auto-seed from the characters API seed data
-      const seedResponse = await fetch(`${req.nextUrl.origin}/api/design/characters`);
-      if (seedResponse.ok) {
-        allChars = db.select().from(characters).all();
+      const { v4: uuid } = await import("uuid");
+      const miloId = uuid();
+      const cloverId = uuid();
+      const pipId = uuid();
+      db.insert(characters).values([
+        { id: miloId, name: "Milo", slug: "milo", species: "Mouse", personalityBio: "Milo is an adventurous, wide-eyed young mouse.", appearancePrompt: "Small adventurous mouse with wide eyes. Canvas backpack with brass buckles.", voiceId: null, traits: ["adventurous","curious","brave"], catchphrases: ["Let's go see!"], relationships: [{characterId: cloverId, description: "Best friend"}], referenceImages: [] },
+        { id: cloverId, name: "Clover", slug: "clover", species: "Caterpillar", personalityBio: "Clover is a sleepy, curious green caterpillar.", appearancePrompt: "Sleepy green caterpillar with oversized ivory scarf.", voiceId: null, traits: ["sleepy","wise","gentle"], catchphrases: ["Take your time..."], relationships: [{characterId: miloId, description: "Brave friend"}], referenceImages: [] },
+        { id: pipId, name: "Pip", slug: "pip", species: "Firefly", personalityBio: "Pip is a shy, flickering firefly.", appearancePrompt: "Shy firefly with iridescent wings and warm golden glow.", voiceId: null, traits: ["shy","gentle","luminous"], catchphrases: ["*flickers softly*"], relationships: [{characterId: miloId, description: "Adventurous friend"}], referenceImages: [] },
+      ]).run();
+      allChars = db.select().from(characters).all();
+    }
+
+    let world = worldId
+      ? db.select().from(worlds).where(eq(worlds.id, worldId)).get()
+      : null;
+
+    // Auto-seed world if empty
+    if (!world) {
+      const allWorlds = db.select().from(worlds).all();
+      if (allWorlds.length === 0) {
+        const { v4: uuid } = await import("uuid");
+        const worldId2 = uuid();
+        db.insert(worlds).values({
+          id: worldId2, name: "The Nocturnal Meadow", slug: "nocturnal-meadow",
+          description: "A luminous nighttime meadow beneath a vast star-flecked sky.",
+          stylePrompt: "Bright artsy nocturnal storybook illustration. Deep navy night sky. Warm golden glow. Silver moonlight rim-lighting. Soft glowing edges.",
+          colorPalette: ["#1a1a2e","#fbbf24","#bae6fd"], referenceImages: [],
+        }).run();
+        const seededWorlds = db.select().from(worlds).all();
+        if (seededWorlds.length > 0) world = seededWorlds[0];
+      } else {
+        world = allWorlds[0];
       }
     }
 
     const characterRecords = characterIds.length > 0
       ? allChars.filter((c: any) => characterIds.includes(c.id))
       : allChars;
-
-    const world = worldId
-      ? db.select().from(worlds).where(eq(worlds.id, worldId)).get()
-      : (allChars.length > 0 ? db.select().from(worlds).all()[0] : null);
-
-    // Auto-seed worlds if empty
-    if (!world) {
-      const worldSeedResponse = await fetch(`${req.nextUrl.origin}/api/design/worlds`);
-      if (worldSeedResponse.ok) {
-        const worldsData = db.select().from(worlds).all();
-        if (worldsData.length > 0) {
-          const fallbackWorld = worldsData[0];
-          return generateStoryResponse(req, body, characterRecords, fallbackWorld);
-        }
-      }
-    }
 
     if (characterRecords.length === 0) {
       return NextResponse.json(
