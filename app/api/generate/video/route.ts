@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
       .from(illustrations)
       .where(eq(illustrations.storyId, storyId))
       .all()
-      .sort((a, b) => a.order - b.order);
+      .sort((a: any, b: any) => a.order - b.order);
 
     if (illData.length === 0) {
       return NextResponse.json(

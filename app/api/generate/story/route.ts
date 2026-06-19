@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     const worldId: string = body.worldId || "";
 
     const characterRecords = characterIds.length > 0
-      ? db.select().from(characters).all().filter((c) => characterIds.includes(c.id))
+      ? db.select().from(characters).all().filter((c: any) => characterIds.includes(c.id))
       : db.select().from(characters).all();
 
     const world = worldId
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
       ageRange: body.ageRange || "4-8",
       theme: body.theme || "friendship and wonder",
       length: body.length || "short",
-      characters: characterRecords.map((c) => ({
+      characters: characterRecords.map((c: any) => ({
         name: c.name,
         species: c.species,
         personalityBio: c.personalityBio,

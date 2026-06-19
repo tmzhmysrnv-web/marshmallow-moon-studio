@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
       .from(illustrations)
       .where(eq(illustrations.storyId, storyId))
       .all()
-      .sort((a, b) => a.order - b.order);
+      .sort((a: any, b: any) => a.order - b.order);
 
     const trimW = trimWidth || 8.5;
     const trimH = trimHeight || 8.5;
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     // Build HTML for print
     const html = buildPrintHtml({
       title: story.title,
-      scenes: illData.map((ill, i) => ({
+      scenes: illData.map((ill: any, i: number) => ({
         pageNumber: ill.pageNumber,
         imagePath: ill.imagePath,
       })),

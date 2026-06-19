@@ -2,6 +2,9 @@ import { getDb } from "@/lib/db";
 import { characters, worlds } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyRecord = any;
+
 export interface ComposedPrompt {
   text: string;
   referenceImages: string[];
@@ -17,11 +20,11 @@ export async function composePrompt(
   try {
     const db = getDb();
 
-    const world = db.select().from(worlds).where(eq(worlds.id, worldId)).get();
+    const world = db.select().from(worlds).where(eq(worlds.id, worldId)).get() as AnyRecord;
     if (!world) throw new Error(`World not found: ${worldId}`);
 
-    const allChars = db.select().from(characters).all();
-    const characterRecords = allChars.filter((c) => characterIds.includes(c.id));
+    const allChars = db.select().from(characters).all() as AnyRecord[];
+    const characterRecords = allChars.filter((c: AnyRecord) => characterIds.includes(c.id));
 
     const referenceImages: string[] = [];
     for (const char of characterRecords) {
@@ -30,14 +33,14 @@ export async function composePrompt(
       }
     }
 
-    const characterDescriptions = characterRecords
-      .map((c) => c.appearancePrompt)
+    const characterDescriptions: string[] = characterRecords
+      .map((c: AnyRecord) => c.appearancePrompt as string)
       .filter(Boolean);
 
     const promptParts = [
       world.stylePrompt,
       "",
-      ...characterDescriptions.map((desc) => `Character: ${desc}`),
+      ...characterDescriptions.map((desc: string) => `Character: ${desc}`),
       "",
       `Scene: ${sceneDescription}`,
     ];
