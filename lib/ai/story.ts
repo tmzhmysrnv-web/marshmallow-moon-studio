@@ -93,8 +93,8 @@ export async function generateStoryWithAnthropic(input: StoryGenerationInput) {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 4000,
+    model: "claude-3-5-sonnet-20241022",
+    max_tokens: 4096,
     system: buildStorySystemPrompt(input),
     messages: [{ role: "user", content: buildStoryUserPrompt(input) }],
   });
