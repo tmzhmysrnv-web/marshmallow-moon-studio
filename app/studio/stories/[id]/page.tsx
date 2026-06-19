@@ -38,6 +38,7 @@ export default function StoryDetailPage() {
   const [generating, setGenerating] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [activeScene, setActiveScene] = useState(0);
+  const [imageModel, setImageModel] = useState<string>("replicate");
 
   useEffect(() => {
     fetch(`/api/generate/story/${params.id}`)
@@ -86,6 +87,7 @@ export default function StoryDetailPage() {
           sceneDescription: scene.illustration,
           pageNumber: scene.sceneNumber,
           order: scene.sceneNumber,
+          model: imageModel,
         }),
       });
 
@@ -214,6 +216,22 @@ export default function StoryDetailPage() {
           <h3 className="text-xs font-semibold text-pink-400 uppercase tracking-wider mb-4">
             Illustration — Scene {activeScene + 1}
           </h3>
+
+          {/* Model Selector */}
+          {!currentIll && (
+            <div className="mb-4">
+              <label className="block text-xs font-medium text-slate-400 mb-1.5">Illustration Model</label>
+              <select
+                value={imageModel}
+                onChange={(e) => setImageModel(e.target.value)}
+                className="w-full px-3 py-2 bg-night-surface border border-night-border rounded-lg text-xs text-slate-300 focus:outline-none focus:border-pink-500/50 transition-colors"
+              >
+                <option value="replicate">🎨 Replicate FLUX (best consistency)</option>
+                <option value="anthropic">🧠 Anthropic refine + FLUX</option>
+                <option value="openai">🖼️ OpenAI DALL·E 3</option>
+              </select>
+            </div>
+          )}
 
           {currentIll ? (
             <div className="space-y-4">

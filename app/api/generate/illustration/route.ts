@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { storyId, worldId, characterIds, sceneDescription, pageNumber, order } = body;
+    const { storyId, worldId, characterIds, sceneDescription, pageNumber, order, model } = body;
 
     if (!storyId || !worldId || !sceneDescription) {
       return NextResponse.json(
@@ -45,12 +45,44 @@ export async function POST(req: NextRequest) {
 
     console.log("🎨 Composed prompt:", composed.text.substring(0, 200) + "...");
 
-    // 2. Generate the illustration
-    const imageOutput = await generateIllustration({
-      prompt: composed.text,
-      referenceImages: composed.referenceImages,
-      worldStylePrompt: composed.worldStylePrompt,
-    });
+    // 2. Optionally refine prompt with Anthropic before image generation
+    let finalPrompt = composed.text;
+    const selectedModel = model || "replicate";
+    
+    if (selectedModel === "anthropic" && process.env.ANTHROPIC_API_KEY) {
+      try {
+        const Anthropic = await import("@anthropic-ai/sdk");
+        const anthropic = new Anthropic.default({ apiKey: process.env.ANTHROPIC_API_KEY! });
+        const refined = await anthropic.messages.create({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 500,
+          system: "You refine illustration prompts for an AI image generator. Make the prompt more vivid, detailed, and visually specific. Keep it to 2-3 sentences. Output ONLY the refined prompt, nothing else.",
+          messages: [{ role: "user", content: `Refine this children's book illustration prompt:\n\n${composed.text}` }],
+        });
+        const refinedText = refined.content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
+        if (refinedText.trim()) finalPrompt = refinedText.trim();
+      } catch (e) {
+        console.warn("Anthropic prompt refinement failed, using original:", e);
+      }
+    }
+
+    // 3. Generate the illustration with the selected model
+    let imageOutput;
+    if (selectedModel === "openai") {
+      const { generateIllustrationWithOpenAI } = await import("@/lib/ai/illustration");
+      imageOutput = await generateIllustrationWithOpenAI({
+        prompt: finalPrompt,
+        referenceImages: composed.referenceImages,
+        worldStylePrompt: composed.worldStylePrompt,
+      });
+    } else {
+      // Default: Replicate FLUX
+      imageOutput = await generateIllustration({
+        prompt: finalPrompt,
+        referenceImages: composed.referenceImages,
+        worldStylePrompt: composed.worldStylePrompt,
+      });
+    }
 
     // 3. Handle the output (Replicate returns URL or array of URLs)
     let imageUrl: string;
