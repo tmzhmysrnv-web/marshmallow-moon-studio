@@ -87,74 +87,67 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 3. Handle the output (Replicate returns URL or array of URLs)
+    // 3. Handle the output
     let imageUrl: string;
     if (Array.isArray(imageOutput)) {
       imageUrl = imageOutput[0] as string;
     } else if (typeof imageOutput === "string") {
       imageUrl = imageOutput;
+    } else if (imageOutput && typeof imageOutput === "object" && (imageOutput as any).url) {
+      // Handle object with url property
+      imageUrl = (imageOutput as any).url;
     } else {
-      throw new Error("Unexpected Replicate output format");
+      console.error("Unexpected Replicate output format:", JSON.stringify(imageOutput).substring(0, 200));
+      throw new Error(`Unexpected Replicate output format: ${typeof imageOutput}`);
     }
+    console.log("Replicate image URL:", imageUrl);
 
-    // 4. Download image to buffer, save to Vercel Blob or /tmp
+    // 4. Download image and save
     const imageResponse = await fetch(imageUrl);
     if (!imageResponse.ok) {
       throw new Error(`Failed to download generated image: ${imageResponse.status}`);
     }
     const buffer = Buffer.from(await imageResponse.arrayBuffer());
+    console.log("Image downloaded, size:", buffer.length);
 
-    let imagePath: string;
+    // 5. Save to Vercel Blob ALWAYS (not just when token exists)
+    let imagePath = imageUrl; // fallback: use Replicate URL directly
+
+    const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+    console.log("Blob token present:", !!blobToken);
     
-    if (process.env.BLOB_READ_WRITE_TOKEN) {
+    if (blobToken) {
       try {
         const { put } = await import("@vercel/blob");
         const blob = await put(`illustrations/${uuid()}.png`, buffer, {
           access: "public",
           contentType: "image/png",
-          token: process.env.BLOB_READ_WRITE_TOKEN,
+          token: blobToken,
         });
         imagePath = blob.url;
-        console.log("✓ Illustration saved to Vercel Blob");
-      } catch (e) {
-        console.warn("Blob upload failed, using /tmp:", (e as Error).message);
-        // Fall back to /tmp
-        const tmpDir = path.join("/tmp", "illustrations");
-        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-        const tmpFile = path.join(tmpDir, `${uuid()}.png`);
-        fs.writeFileSync(tmpFile, buffer);
-        imagePath = `/tmp/illustrations/${path.basename(tmpFile)}`;
+        console.log("✓ Saved to Vercel Blob:", imagePath);
+      } catch (e: any) {
+        console.error("Blob save error:", e.message);
+        // Fall through to use Replicate URL
       }
     } else {
-      // Local dev: save to data directory
-      const dataDir = path.resolve("data", "illustrations");
-      if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-      const localFile = path.join(dataDir, `${uuid()}.png`);
-      fs.writeFileSync(localFile, buffer);
-      imagePath = `/data/illustrations/${path.basename(localFile)}`;
+      console.log("No Blob token — using Replicate URL directly");
     }
 
-    // 5. Save to database
+    // 6. Save to database
     const db = getDb();
-    const illustration = {
-      id: uuid(),
-      storyId,
-      characterIds: characterIds || [],
-      worldId,
-      pageNumber: pageNumber || 1,
-      prompt: composed.text,
-      imagePath,
-      order: order || pageNumber || 1,
-      status: "generated",
+    const record = {
+      id: uuid(), storyId, characterIds: characterIds || [], worldId,
+      pageNumber: pageNumber || 1, prompt: composed.text, imagePath,
+      order: order || pageNumber || 1, status: "generated",
     };
 
-    db.insert(illustrations).values(illustration).run();
+    console.log("Saving illustration record:", { id: record.id, storyId, pageNumber, imagePath: imagePath.substring(0, 50) });
 
-    const created = db
-      .select()
-      .from(illustrations)
-      .where(eq(illustrations.id, illustration.id))
-      .get();
+    db.insert(illustrations).values(record).run();
+    const created = db.select().from(illustrations).where(eq(illustrations.id, record.id)).get();
+
+    console.log("Illustration saved:", created ? "yes" : "NO - not found in DB");
 
     return NextResponse.json(created, { status: 201 });
   } catch (err: any) {

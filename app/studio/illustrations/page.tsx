@@ -43,8 +43,11 @@ export default function IllustrationsPage() {
       .catch(() => setLoading(false));
   }, []);
 
-  const getStoryTitle = (storyId: string) =>
-    stories.find((s) => s.id === storyId)?.title || "Unknown Story";
+  const getStoryTitle = (storyId: string) => {
+    const story = stories.find((s) => s.id === storyId);
+    if (story && story.title && story.title !== "Loading...") return story.title;
+    return storyId ? "Story " + storyId.substring(0, 8) : "Story";
+  };
 
   if (loading) {
     return (
