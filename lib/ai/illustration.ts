@@ -1,15 +1,49 @@
-import Replicate from "replicate";
-
 // ============================================================
-// Illustration Generation
+// Illustration Generation — direct Replicate REST API
 // ============================================================
 
 export interface IllustrationInput {
-  prompt: string; // The composed prompt
-  referenceImages?: string[]; // URLs of reference images for character consistency
+  prompt: string;
+  referenceImages?: string[];
   worldStylePrompt?: string;
   width?: number;
   height?: number;
+}
+
+async function callReplicateAPI(version: string, input: Record<string, unknown>) {
+  const token = process.env.REPLICATE_API_TOKEN!;
+
+  const res = await fetch("https://api.replicate.com/v1/predictions", {
+    method: "POST",
+    headers: {
+      Authorization: `Token ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ version, input }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Replicate API ${res.status}: ${text.substring(0, 300)}`);
+  }
+
+  const prediction = await res.json() as any;
+
+  let result = prediction;
+  for (let i = 0; i < 60; i++) {
+    if (result.status === "succeeded") return result.output;
+    if (result.status === "failed" || result.status === "canceled") {
+      throw new Error(`Replicate ${result.status}: ${JSON.stringify(result.error || "unknown")}`);
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+    const poll = await fetch(
+      `https://api.replicate.com/v1/predictions/${prediction.id}`,
+      { headers: { Authorization: `Token ${token}` } }
+    );
+    result = await poll.json();
+  }
+
+  throw new Error("Replicate prediction timed out after 120s");
 }
 
 export async function generateIllustration(input: IllustrationInput) {
@@ -17,65 +51,56 @@ export async function generateIllustration(input: IllustrationInput) {
     throw new Error("REPLICATE_API_TOKEN not configured");
   }
 
-  const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
-
-  // Build the full prompt — aggressively strip ALL non-ASCII characters
   const fullPrompt = [
     input.worldStylePrompt || "",
     input.prompt || "",
-    "Childrens book illustration. Soft edges, warm and magical atmosphere. Consistent character design.",
   ]
     .filter(Boolean)
-    .join(" ")
-    // Remove ALL non-ASCII characters (anything above 127)
+    .join(". ")
+    .replace(/[\u2018\u2019\u201C\u201D]/g, "'")
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/\u2026/g, "...")
+    .replace(/\u2022/g, "-")
+    .replace(/\u00A0/g, " ")
     .replace(/[^\x00-\x7F]/g, "")
-    // Clean up multiple spaces and double punctuation
     .replace(/\s+/g, " ")
-    .replace(/\'\'+/g, "'")
     .trim();
 
-  const inputData: Record<string, any> = {
+  console.log("Sanitized prompt (" + fullPrompt.length + " chars):", fullPrompt.substring(0, 100));
+
+  const inputData: Record<string, unknown> = {
     prompt: fullPrompt,
-    width: input.width || 1024,
-    height: input.height || 1024,
+    width: (input.width || 1024),
+    height: (input.height || 1024),
     num_outputs: 1,
     aspect_ratio: "1:1",
     output_format: "png",
     output_quality: 90,
   };
 
-  // Add reference images if available (FLUX.2 Max supports this)
   if (input.referenceImages && input.referenceImages.length > 0) {
-    inputData.image = input.referenceImages.slice(0, 8); // FLUX supports up to 8 refs
+    inputData.image = input.referenceImages.slice(0, 8);
   }
 
-  // Use FLUX.2 Max for best character consistency
-  const output = await replicate.run("black-forest-labs/flux-2-max" as any, {
-    input: inputData,
-  });
-
-  return output;
+  return callReplicateAPI("black-forest-labs/flux-2-max", inputData);
 }
-
-// ============================================================
-// Replicate alternative: GPT Image (OpenAI)
-// ============================================================
 
 export async function generateIllustrationWithOpenAI(input: IllustrationInput) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY not configured");
   }
 
-  const { OpenAI } = await import("openai");
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
   const fullPrompt = [
-    input.worldStylePrompt,
-    input.prompt,
-    "Children's book illustration. Soft edges, warm and magical atmosphere.",
+    input.worldStylePrompt || "",
+    input.prompt || "",
   ]
     .filter(Boolean)
-    .join(" ");
+    .join(". ")
+    .replace(/[^\x00-\x7F]/g, "")
+    .trim();
+
+  const OpenAI = await import("openai");
+  const openai = new OpenAI.default({ apiKey: process.env.OPENAI_API_KEY });
 
   const response = await openai.images.generate({
     model: "dall-e-3",
