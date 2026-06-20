@@ -19,14 +19,29 @@ export async function generateIllustration(input: IllustrationInput) {
 
   const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
 
-  // Build the full prompt with world style injected
+  // Build the full prompt with world style injected, sanitize Unicode
   const fullPrompt = [
     input.worldStylePrompt,
     input.prompt,
     "Children's book illustration. Soft edges, warm and magical atmosphere. Consistent character design.",
   ]
     .filter(Boolean)
-    .join(" ");
+    .join(" ")
+    // Replace Unicode characters that cause Replicate API errors
+    .replace(/[\u2018\u2019\u201C\u201D\u2013\u2014\u2026\u00A0\u2022\u00B7]/g, (c: string) => {
+      const map: Record<string, string> = {
+        '\u2018': "'", '\u2019': "'",  // smart single quotes
+        '\u201C': '"', '\u201D': '"',  // smart double quotes
+        '\u2013': '-', '\u2014': '--', // en/em dashes
+        '\u2026': '...',                // ellipsis
+        '\u00A0': ' ',                  // non-breaking space
+        '\u2022': '-',                  // bullet
+        '\u00B7': '-',                  // middle dot
+      };
+      return map[c] || c;
+    })
+    // Remove any remaining non-ASCII characters that aren't standard
+    .replace(/[^\x00-\x7F]/g, '');
 
   const inputData: Record<string, any> = {
     prompt: fullPrompt,
