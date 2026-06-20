@@ -5,10 +5,30 @@ import { stories, characters, worlds } from "@/lib/db/schema";
 import { v4 as uuid } from "uuid";
 import { eq } from "drizzle-orm";
 
-// GET /api/generate/story — list all stories
+// GET /api/generate/story — list all stories (loads from Blob if memory empty)
 export async function GET() {
   const db = getDb();
-  const all = db.select().from(stories).all();
+  let all = db.select().from(stories).all();
+
+  // If empty, try loading from Vercel Blob
+  if (all.length === 0 && process.env.BLOB_READ_WRITE_TOKEN) {
+    try {
+      const { list } = await import("@vercel/blob");
+      const { blobs } = await list({ token: process.env.BLOB_READ_WRITE_TOKEN });
+      const existing = blobs.find((b: any) => b.pathname === "marshmallow-moon-store.json");
+      if (existing) {
+        const resp = await fetch(existing.url);
+        const data = await resp.json();
+        if (data?.stories) {
+          all = data.stories;
+          console.log("✓ Stories loaded from Blob:", all.length);
+        }
+      }
+    } catch (e) {
+      console.warn("Blob story list load failed:", (e as Error).message);
+    }
+  }
+
   return NextResponse.json(all);
 }
 
