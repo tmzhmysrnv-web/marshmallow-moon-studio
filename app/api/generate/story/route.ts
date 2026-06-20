@@ -1,44 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateStory, parseStoryScenes } from "@/lib/ai/story";
-import { getDb } from "@/lib/db";
+import { getDb, forceBlobLoad } from "@/lib/db";
 import { stories, characters, worlds } from "@/lib/db/schema";
 import { v4 as uuid } from "uuid";
 import { eq } from "drizzle-orm";
 
-// GET /api/generate/story — list all stories (loads from Blob if memory empty)
+// GET /api/generate/story — list all stories (loads from Blob first)
 export async function GET() {
-  const db = getDb();
-  let all = db.select().from(stories).all();
-
-  // If empty, try loading from Vercel Blob
-  if (all.length === 0 && process.env.BLOB_READ_WRITE_TOKEN) {
+  // Sync from Blob before reading (ensures cross-deploy persistence)
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
     try {
-      const { list } = await import("@vercel/blob");
-      const { blobs } = await list({ token: process.env.BLOB_READ_WRITE_TOKEN });
-      const existing = blobs.find((b: any) => b.pathname === "marshmallow-moon-store.json");
-      if (existing) {
-        const resp = await fetch(existing.url);
-        const data = await resp.json();
-        if (data?.stories) {
-          all = data.stories;
-          console.log("✓ Stories loaded from Blob:", all.length);
-        }
-      }
+      await forceBlobLoad();
     } catch (e) {
-      console.warn("Blob story list load failed:", (e as Error).message);
+      console.warn("Blob sync failed:", (e as Error).message);
     }
   }
-
+  
+  const db = getDb();
+  const all = db.select().from(stories).all();
   return NextResponse.json(all);
 }
 
-// POST /api/generate/story — generate a new story
+// POST /api/generate/story — generate or upload a story
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const db = getDb();
     const characterIds: string[] = body.characterIds || [];
     const worldId: string = body.worldId || "";
+    const source: string = body.source || "ai";
+    const uploadedContent: string = body.content || "";
 
     // Auto-seed characters and worlds if needed
     let allChars = db.select().from(characters).all();
@@ -97,30 +88,47 @@ export async function POST(req: NextRequest) {
     }
 
     // Filter characters
-    const characterRecords = characterIds.length > 0
-      ? allChars.filter((c: any) => characterIds.includes(c.id))
-      : allChars;
+    // Track character records for response
+    let characterRecords: any[] = [];
 
-    if (characterRecords.length === 0) {
-      return NextResponse.json({ error: "No characters found." }, { status: 400 });
-    }
-    if (!world) {
-      return NextResponse.json({ error: "No world found." }, { status: 400 });
-    }
+    // Generate or parse story
+    let rawContent: string;
+    if (source === "upload" && uploadedContent.trim()) {
+      // Upload mode: use the provided content directly
+      rawContent = uploadedContent.trim();
+      if (!rawContent.includes("Scene") && !rawContent.includes("---")) {
+        const paragraphs = rawContent.split(/\n\n+/).filter((p: string) => p.trim());
+        if (paragraphs.length > 1) {
+          rawContent = paragraphs.map((p: string, i: number) => `## Scene ${i + 1}\n${p.trim()}`).join("\n\n");
+        }
+      }
+      characterRecords = allChars;
+    } else {
+      // AI mode
+      characterRecords = characterIds.length > 0
+        ? allChars.filter((c: any) => characterIds.includes(c.id))
+        : allChars;
 
-    // Generate story
-    const rawContent = await generateStory({
-      title: body.title || "A Marshmallow Moon Adventure",
-      ageRange: body.ageRange || "4-8",
-      theme: body.theme || "friendship and wonder",
-      length: body.length || "short",
-      characters: characterRecords.map((c: any) => ({
-        name: c.name, species: c.species, personalityBio: c.personalityBio,
-        traits: c.traits ?? [], catchphrases: c.catchphrases ?? [],
-      })),
-      world: { name: world.name, description: world.description, stylePrompt: world.stylePrompt },
-      additionalNotes: body.additionalNotes,
-    });
+      if (characterRecords.length === 0) {
+        return NextResponse.json({ error: "No characters found." }, { status: 400 });
+      }
+      if (!world) {
+        return NextResponse.json({ error: "No world found." }, { status: 400 });
+      }
+
+      rawContent = await generateStory({
+        title: body.title || "A Marshmallow Moon Adventure",
+        ageRange: body.ageRange || "4-8",
+        theme: body.theme || "friendship and wonder",
+        length: body.length || "short",
+        characters: characterRecords.map((c: any) => ({
+          name: c.name, species: c.species, personalityBio: c.personalityBio,
+          traits: c.traits ?? [], catchphrases: c.catchphrases ?? [],
+        })),
+        world: { name: world.name, description: world.description, stylePrompt: world.stylePrompt },
+        additionalNotes: body.additionalNotes,
+      });
+    }
 
     const scenes = parseStoryScenes(rawContent);
 
@@ -130,7 +138,9 @@ export async function POST(req: NextRequest) {
       slug: (body.title || "marshmallow-moon-adventure").toLowerCase().replace(/\s+/g, "-"),
       content: rawContent, ageRange: body.ageRange || "4-8",
       theme: body.theme || "friendship and wonder",
-      characterIds, worldId: world.id, status: "draft", pageCount: scenes.length,
+      characterIds, worldId: world?.id || worldId || "",
+      status: "draft", pageCount: scenes.length,
+      source: source || "ai",
     };
 
     db.insert(stories).values(story).run();

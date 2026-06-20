@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, forceBlobLoad } from "@/lib/db";
 import { stories } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { parseStoryScenes } from "@/lib/ai/story";
@@ -9,30 +9,18 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const db = getDb();
-  let story = db.select().from(stories).where(eq(stories.id, id)).get();
 
-  // Try loading from Vercel Blob if not found in memory
-  if (!story) {
+  // Sync from Blob before reading (ensures cross-deploy persistence)
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
     try {
-      // Try Blob
-      if (process.env.BLOB_READ_WRITE_TOKEN) {
-        const { list } = await import("@vercel/blob");
-        const { blobs } = await list({ token: process.env.BLOB_READ_WRITE_TOKEN });
-        const existing = blobs.find((b: any) => b.pathname === "marshmallow-moon-store.json");
-        if (existing) {
-          const response = await fetch(existing.url);
-          const data = await response.json();
-          if (data?.stories) {
-            story = data.stories.find((s: any) => s.id === id);
-            if (story) console.log("✓ Story loaded from Vercel Blob:", id);
-          }
-        }
-      }
+      await forceBlobLoad();
     } catch (e) {
-      console.warn("Blob lookup failed:", (e as Error).message);
+      console.warn("Blob sync failed:", (e as Error).message);
     }
   }
+
+  const db = getDb();
+  const story = db.select().from(stories).where(eq(stories.id, id)).get();
 
   if (!story) return NextResponse.json({ error: "Not found" }, { status: 404 });
 

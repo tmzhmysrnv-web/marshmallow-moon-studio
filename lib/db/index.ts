@@ -139,6 +139,25 @@ function persistAfterMutation() {
   savePersisted();
 }
 
+// Export for API routes that need to await persistence
+// Also used to load from Blob into in-memory store
+export async function forceBlobPersist() {
+  await savePersisted();
+}
+
+export async function forceBlobLoad(): Promise<InMemoryStore> {
+  const persisted = await loadPersisted();
+  if (persisted) {
+    // Merge into global store
+    const store = getStore();
+    for (const key of Object.keys(persisted) as (keyof InMemoryStore)[]) {
+      store[key] = persisted[key];
+    }
+    console.log("✓ Store synced from Blob");
+  }
+  return getStore();
+}
+
 // Simple in-memory query builder
 function createQuery<T>(table: keyof InMemoryStore) {
   const store = getStore();

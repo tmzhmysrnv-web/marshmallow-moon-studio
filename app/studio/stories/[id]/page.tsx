@@ -40,6 +40,11 @@ export default function StoryDetailPage() {
   const [activeScene, setActiveScene] = useState(0);
   const [imageModel, setImageModel] = useState<string>("replicate");
 
+  // Batch generation state
+  const [batchGenerating, setBatchGenerating] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ total: 0, done: 0, current: 0 });
+  const [batchModel, setBatchModel] = useState<string>("replicate");
+
   useEffect(() => {
     fetch(`/api/generate/story/${params.id}`)
       .then((r) => r.json())
@@ -102,6 +107,60 @@ export default function StoryDetailPage() {
     }
     setGenerating(null);
   }, [story, generating]);
+
+  // Batch generate all missing illustrations
+  const generateAllIllustrations = useCallback(async () => {
+    if (!story || batchGenerating) return;
+    const missing = story.scenes
+      .map((s, i) => ({ sceneIndex: i, pageNumber: s.sceneNumber }))
+      .filter(({ pageNumber }) => !illustrations[pageNumber]);
+
+    if (missing.length === 0) {
+      setError("All scenes already have illustrations.");
+      return;
+    }
+
+    setBatchGenerating(true);
+    setError("");
+    setBatchProgress({ total: missing.length, done: 0, current: missing[0].pageNumber });
+
+    let completed = 0;
+    for (const { sceneIndex, pageNumber } of missing) {
+      setBatchProgress({ total: missing.length, done: completed, current: pageNumber });
+      const scene = story.scenes[sceneIndex];
+      if (!scene) continue;
+
+      try {
+        const res = await fetch("/api/generate/illustration", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            storyId: story.id,
+            worldId: story.worldId,
+            characterIds: story.characterIds || [],
+            sceneDescription: scene.illustration,
+            pageNumber: scene.sceneNumber,
+            order: scene.sceneNumber,
+            model: batchModel,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setIllustrations((prev) => ({ ...prev, [data.pageNumber]: data }));
+          completed++;
+        } else {
+          console.warn(`Scene ${pageNumber} failed:`, data.error);
+          completed++; // count as done even if failed
+        }
+      } catch {
+        console.warn(`Scene ${pageNumber} network error`);
+        completed++;
+      }
+    }
+
+    setBatchGenerating(false);
+    setBatchProgress({ total: 0, done: 0, current: 0 });
+  }, [story, illustrations, batchGenerating, batchModel]);
 
   if (loading) {
     return (
@@ -167,6 +226,65 @@ export default function StoryDetailPage() {
 
       {error && (
         <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-400">{error}</div>
+      )}
+
+      {/* Batch Generate All Button */}
+      {Object.keys(illustrations).length < story.scenes.length && (
+        <div className="mb-6 glass p-4">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <p className="text-sm font-medium text-slate-200">
+                🎨 {Object.keys(illustrations).length} of {story.scenes.length} scenes illustrated
+              </p>
+              <p className="text-xs text-muted mt-0.5">
+                Generate all remaining {story.scenes.length - Object.keys(illustrations).length} at once
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {!batchGenerating && (
+                <select
+                  value={batchModel}
+                  onChange={(e) => setBatchModel(e.target.value)}
+                  className="px-2 py-1.5 bg-night-surface border border-night-border rounded-lg text-xs text-slate-300 focus:outline-none"
+                >
+                  <option value="replicate">FLUX Schnell</option>
+                  <option value="openai">DALL·E 3</option>
+                  <option value="anthropic">Claude refine</option>
+                </select>
+              )}
+              <button
+                onClick={generateAllIllustrations}
+                disabled={batchGenerating}
+                className="px-4 py-2 bg-pink-500 text-white rounded-lg text-sm font-semibold hover:bg-pink-600 disabled:opacity-50 transition-colors flex items-center gap-2"
+              >
+                {batchGenerating ? (
+                  <>
+                    <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Scene {batchProgress.current} · {batchProgress.done}/{batchProgress.total}
+                  </>
+                ) : (
+                  "🎨 Generate All"
+                )}
+              </button>
+            </div>
+          </div>
+          {batchGenerating && (
+            <div className="mt-3">
+              <div className="h-1.5 bg-night-surface rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-pink-500 to-violet-500 rounded-full transition-all duration-500"
+                  style={{ width: `${batchProgress.total > 0 ? (batchProgress.done / batchProgress.total) * 100 : 0}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted mt-1">
+                {batchProgress.done} of {batchProgress.total} complete · Each takes ~5 seconds
+              </p>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Scene Navigation */}

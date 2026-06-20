@@ -183,7 +183,7 @@ export function parseStoryScenes(rawText: string): StoryScene[] {
     });
   }
 
-  // If regex parsing failed, try simpler fallback
+  // If regex parsing failed, try simpler fallback (AI format)
   if (scenes.length === 0) {
     const fallbackRegex = /\*\*Scene (\d+)\*\*([\s\S]*?)(?=\*\*Scene \d+\*\*|$)/g;
     while ((match = fallbackRegex.exec(rawText)) !== null) {
@@ -194,6 +194,46 @@ export function parseStoryScenes(rawText: string): StoryScene[] {
         sceneNumber: parseInt(match[1]),
         narrative: narrativeMatch?.[1]?.trim() || "",
         illustration: illustrationMatch?.[1]?.trim() || "",
+      });
+    }
+  }
+
+  // Fallback for uploaded stories: ## Scene N, Scene N:, or --- separators
+  if (scenes.length === 0) {
+    // Try ## Scene N or Scene N: markers (case insensitive)
+    const uploadedRegex = /(?:##\s*)?Scene\s+(\d+):?\s*\n([\s\S]*?)(?=(?:(?:##\s*)?Scene\s+\d+:?\s*\n|$))/gi;
+    while ((match = uploadedRegex.exec(rawText)) !== null) {
+      scenes.push({
+        sceneNumber: parseInt(match[1]),
+        narrative: match[2].trim(),
+        illustration: match[2].trim(), // Same text used for illustration prompt
+      });
+    }
+
+    // Try --- separators
+    if (scenes.length === 0) {
+      const parts = rawText.split(/\n---\n/);
+      parts.forEach((part, i) => {
+        const trimmed = part.trim();
+        if (trimmed) {
+          scenes.push({
+            sceneNumber: i + 1,
+            narrative: trimmed,
+            illustration: trimmed,
+          });
+        }
+      });
+    }
+
+    // Last resort: split by double newlines into paragraphs
+    if (scenes.length === 0) {
+      const paragraphs = rawText.split(/\n\n+/).filter((p) => p.trim().length > 20);
+      paragraphs.forEach((p, i) => {
+        scenes.push({
+          sceneNumber: i + 1,
+          narrative: p.trim(),
+          illustration: p.trim(),
+        });
       });
     }
   }

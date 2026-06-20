@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
-import { illustrations } from "@/lib/db/schema";
+import { getDb, forceBlobLoad } from "@/lib/db";
+import { illustrations, stories, characters, worlds } from "@/lib/db/schema";
 import { composePrompt } from "@/lib/ai/prompt-composer";
 import { generateIllustration } from "@/lib/ai/illustration";
 import { v4 as uuid } from "uuid";
@@ -10,6 +10,15 @@ import path from "path";
 
 // GET /api/generate/illustration — list all illustrations, optionally filtered by story
 export async function GET(req: NextRequest) {
+  // Sync from Blob before reading
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    try {
+      await forceBlobLoad();
+    } catch (e) {
+      console.warn("Blob sync failed:", (e as Error).message);
+    }
+  }
+
   const db = getDb();
   const storyId = req.nextUrl.searchParams.get("storyId");
 
@@ -148,6 +157,27 @@ export async function POST(req: NextRequest) {
     const created = db.select().from(illustrations).where(eq(illustrations.id, record.id)).get();
 
     console.log("Illustration saved:", created ? "yes" : "NO - not found in DB");
+
+    // Persist the FULL store to Vercel Blob (so illustrations survive redeploy)
+    try {
+      if (process.env.BLOB_READ_WRITE_TOKEN) {
+        const { put } = await import("@vercel/blob");
+        const store = {
+          characters: db.select().from(characters).all(),
+          worlds: db.select().from(worlds).all(),
+          stories: db.select().from(stories).all(),
+          illustrations: db.select().from(illustrations).all(),
+        };
+        await put("marshmallow-moon-store.json", JSON.stringify(store), {
+          access: "public",
+          contentType: "application/json",
+          token: process.env.BLOB_READ_WRITE_TOKEN,
+        });
+        console.log("✓ Illustrations persisted to Vercel Blob");
+      }
+    } catch (e: any) {
+      console.warn("Blob persist failed:", e.message);
+    }
 
     return NextResponse.json(created, { status: 201 });
   } catch (err: any) {
