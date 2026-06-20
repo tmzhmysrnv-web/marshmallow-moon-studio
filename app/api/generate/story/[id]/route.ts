@@ -12,17 +12,21 @@ export async function GET(
   const db = getDb();
   let story = db.select().from(stories).where(eq(stories.id, id)).get();
 
-  // If not in memory, try loading from Vercel Blob
-  if (!story && process.env.BLOB_READ_WRITE_TOKEN) {
+  // Try loading from Vercel Blob if not found in memory
+  if (!story) {
     try {
-      const { list } = await import("@vercel/blob");
-      const { blobs } = await list({ token: process.env.BLOB_READ_WRITE_TOKEN });
-      const existing = blobs.find((b: any) => b.pathname === "marshmallow-moon-store.json");
-      if (existing) {
-        const response = await fetch(existing.url);
-        const data = await response.json();
-        if (data?.stories) {
-          story = data.stories.find((s: any) => s.id === id);
+      // Try Blob
+      if (process.env.BLOB_READ_WRITE_TOKEN) {
+        const { list } = await import("@vercel/blob");
+        const { blobs } = await list({ token: process.env.BLOB_READ_WRITE_TOKEN });
+        const existing = blobs.find((b: any) => b.pathname === "marshmallow-moon-store.json");
+        if (existing) {
+          const response = await fetch(existing.url);
+          const data = await response.json();
+          if (data?.stories) {
+            story = data.stories.find((s: any) => s.id === id);
+            if (story) console.log("✓ Story loaded from Vercel Blob:", id);
+          }
         }
       }
     } catch (e) {

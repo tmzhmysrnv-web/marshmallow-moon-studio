@@ -116,6 +116,26 @@ export async function POST(req: NextRequest) {
     db.insert(stories).values(story).run();
     const created = db.select().from(stories).where(eq(stories.id, story.id)).get();
 
+    // Synchronously persist to Vercel Blob (so other functions can see this story)
+    try {
+      if (process.env.BLOB_READ_WRITE_TOKEN) {
+        const { put, list } = await import("@vercel/blob");
+        const store = {
+          characters: db.select().from(characters).all(),
+          worlds: db.select().from(worlds).all(),
+          stories: db.select().from(stories).all(),
+        };
+        await put("marshmallow-moon-store.json", JSON.stringify(store), {
+          access: "public",
+          contentType: "application/json",
+          token: process.env.BLOB_READ_WRITE_TOKEN,
+        });
+        console.log("✓ Story persisted to Vercel Blob");
+      }
+    } catch (e) {
+      console.warn("Blob persist failed:", (e as Error).message);
+    }
+
     return NextResponse.json({ ...created, scenes, characters: characterRecords, world }, { status: 201 });
   } catch (err: any) {
     console.error("Story generation error:", err);
