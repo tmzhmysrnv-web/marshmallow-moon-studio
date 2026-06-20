@@ -41,6 +41,10 @@ export default function CharacterDetailPage() {
   const [catchphrases, setCatchphrases] = useState<string[]>([]);
   const [voiceId, setVoiceId] = useState("");
 
+  // Upload state
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState("");
+
   useEffect(() => {
     if (isNew) return;
     fetch(`/api/design/characters/${params.id}`)
@@ -360,40 +364,101 @@ export default function CharacterDetailPage() {
                 const files = e.target.files;
                 if (!files || files.length === 0) return;
 
+                setUploading(true);
+                setUploadProgress(`Uploading ${files.length} image(s)...`);
+
                 const newUrls: string[] = [];
+                let failed = 0;
                 for (const file of Array.from(files)) {
                   const formData = new FormData();
                   formData.append("file", file);
 
                   try {
+                    setUploadProgress(`Uploading "${file.name}"...`);
                     const res = await fetch("/api/upload", { method: "POST", body: formData });
                     const data = await res.json();
                     if (res.ok && data.url) {
                       newUrls.push(data.url);
+                    } else {
+                      failed++;
+                      console.error("Upload failed:", data.error || "Unknown error");
                     }
-                  } catch {
-                    // skip failed uploads
+                  } catch (err) {
+                    failed++;
+                    console.error("Upload network error:", err);
                   }
                 }
 
                 if (newUrls.length > 0) {
                   const updated = [...(character?.referenceImages || []), ...newUrls].slice(0, 5);
-                  if (character) {
-                    setCharacter({ ...character, referenceImages: updated });
+                  setCharacter((prev) => prev ? { ...prev, referenceImages: updated } : prev);
+                  setUploadProgress(`${newUrls.length} uploaded${failed > 0 ? `, ${failed} failed` : ""}. Saving...`);
+
+                  // Auto-save to persist the reference images immediately
+                  const saveBody = {
+                    name: name.trim() || character?.name || "",
+                    species: species.trim() || character?.species || "",
+                    personalityBio: personalityBio || character?.personalityBio || "",
+                    appearancePrompt: appearancePrompt || character?.appearancePrompt || "",
+                    traits,
+                    catchphrases,
+                    voiceId: voiceId || null,
+                    referenceImages: updated,
+                  };
+
+                  try {
+                    const url = isNew ? "/api/design/characters" : `/api/design/characters/${params.id}`;
+                    const method = isNew ? "POST" : "PUT";
+                    const saveRes = await fetch(url, {
+                      method,
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(saveBody),
+                    });
+                    const saveData = await saveRes.json();
+                    if (saveRes.ok) {
+                      setCharacter(saveData);
+                      setUploadProgress(`✓ ${newUrls.length} image(s) saved!`);
+                    } else {
+                      setUploadProgress(`⚠️ Uploaded but save failed: ${saveData.error}`);
+                    }
+                  } catch {
+                    setUploadProgress("⚠️ Uploaded but auto-save failed. Click 'Save Changes'.");
                   }
+                } else {
+                  setUploadProgress(`⚠️ All ${files.length} upload(s) failed. Check your BLOB_READ_WRITE_TOKEN.`);
                 }
+
+                setTimeout(() => setUploadProgress(""), 4000);
+                setUploading(false);
+                // Reset file input so same file can be re-uploaded
+                e.target.value = "";
               }}
               className="hidden"
               id="ref-image-upload"
+              disabled={uploading}
             />
-            <label htmlFor="ref-image-upload" className="cursor-pointer">
-              <div className="text-3xl mb-2">📷</div>
-              <p className="text-sm text-slate-400 mb-1">
-                Click to upload reference images
-              </p>
-              <p className="text-xs text-slate-600">
-                PNG, JPEG, or WEBP · Max 5MB each · Up to 5 images
-              </p>
+            <label htmlFor="ref-image-upload" className={`cursor-pointer ${uploading ? "opacity-50 pointer-events-none" : ""}`}>
+              {uploading ? (
+                <>
+                  <div className="text-3xl mb-2 animate-bounce">📤</div>
+                  <p className="text-sm text-gold mb-1">{uploadProgress}</p>
+                </>
+              ) : uploadProgress ? (
+                <>
+                  <div className="text-3xl mb-2">✅</div>
+                  <p className="text-sm text-emerald-400 mb-1">{uploadProgress}</p>
+                </>
+              ) : (
+                <>
+                  <div className="text-3xl mb-2">📷</div>
+                  <p className="text-sm text-slate-400 mb-1">
+                    Click to upload reference images
+                  </p>
+                  <p className="text-xs text-slate-600">
+                    PNG, JPEG, or WEBP · Max 5MB each · Up to 5 images
+                  </p>
+                </>
+              )}
             </label>
           </div>
         </div>
