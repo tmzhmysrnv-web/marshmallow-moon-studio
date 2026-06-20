@@ -94,22 +94,42 @@ export async function POST(req: NextRequest) {
       throw new Error("Unexpected Replicate output format");
     }
 
-    // 4. Download and save the image locally
-    const dataDir = path.resolve("data", "illustrations");
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
-
-    const filename = `${uuid()}.png`;
-    const filePath = path.join(dataDir, filename);
-
+    // 4. Download image to buffer, save to Vercel Blob or /tmp
     const imageResponse = await fetch(imageUrl);
     if (!imageResponse.ok) {
       throw new Error(`Failed to download generated image: ${imageResponse.status}`);
     }
-
     const buffer = Buffer.from(await imageResponse.arrayBuffer());
-    fs.writeFileSync(filePath, buffer);
+
+    let imagePath: string;
+    
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      try {
+        const { put } = await import("@vercel/blob");
+        const blob = await put(`illustrations/${uuid()}.png`, buffer, {
+          access: "public",
+          contentType: "image/png",
+          token: process.env.BLOB_READ_WRITE_TOKEN,
+        });
+        imagePath = blob.url;
+        console.log("✓ Illustration saved to Vercel Blob");
+      } catch (e) {
+        console.warn("Blob upload failed, using /tmp:", (e as Error).message);
+        // Fall back to /tmp
+        const tmpDir = path.join("/tmp", "illustrations");
+        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+        const tmpFile = path.join(tmpDir, `${uuid()}.png`);
+        fs.writeFileSync(tmpFile, buffer);
+        imagePath = `/tmp/illustrations/${path.basename(tmpFile)}`;
+      }
+    } else {
+      // Local dev: save to data directory
+      const dataDir = path.resolve("data", "illustrations");
+      if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+      const localFile = path.join(dataDir, `${uuid()}.png`);
+      fs.writeFileSync(localFile, buffer);
+      imagePath = `/data/illustrations/${path.basename(localFile)}`;
+    }
 
     // 5. Save to database
     const db = getDb();
@@ -120,7 +140,7 @@ export async function POST(req: NextRequest) {
       worldId,
       pageNumber: pageNumber || 1,
       prompt: composed.text,
-      imagePath: `/data/illustrations/${filename}`,
+      imagePath,
       order: order || pageNumber || 1,
       status: "generated",
     };
