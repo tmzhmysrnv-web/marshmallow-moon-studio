@@ -43,11 +43,13 @@ export async function POST(req: NextRequest) {
       sceneDescription
     );
 
-    console.log("🎨 Composed prompt:", composed.text.substring(0, 200) + "...");
+    console.log("Composed prompt:", composed.text.substring(0, 200) + "...");
+
+    // Determine which model to use (default: cheap FLUX Schnell)
+    const selectedModel = model || "replicate";
 
     // 2. Optionally refine prompt with Anthropic before image generation
     let finalPrompt = composed.text;
-    const selectedModel = model || "replicate";
     
     if (selectedModel === "anthropic" && process.env.ANTHROPIC_API_KEY) {
       try {

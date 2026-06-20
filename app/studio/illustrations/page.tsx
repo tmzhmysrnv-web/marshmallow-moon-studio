@@ -27,11 +27,17 @@ export default function IllustrationsPage() {
   useEffect(() => {
     Promise.all([
       fetch("/api/generate/illustration").then((r) => r.json()),
-      fetch("/api/generate/story").then((r) => r.json()),
+      fetch("/api/generate/story").then((r) => r.json()).catch(() => []),
     ])
       .then(([ills, storyData]) => {
         setIllustrations(Array.isArray(ills) ? ills : []);
-        setStories(Array.isArray(storyData) ? storyData : []);
+        // Try to load stories from the illustrations' story data as fallback
+        if (Array.isArray(ills) && (!Array.isArray(storyData) || storyData.length === 0)) {
+          const storyIds = [...new Set(ills.map((i: any) => i.storyId))];
+          setStories(storyIds.map((sid: string) => ({ id: sid, title: "Loading..." })));
+        } else {
+          setStories(Array.isArray(storyData) ? storyData : []);
+        }
         setLoading(false);
       })
       .catch(() => setLoading(false));
