@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { worlds } from "@/lib/db/schema";
+import { worlds, characters, stories, illustrations } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
 // GET /api/design/worlds/[id]
@@ -41,6 +41,28 @@ export async function PUT(
     .run();
 
   const updated = db.select().from(worlds).where(eq(worlds.id, id)).get();
+
+  // Persist FULL store to Vercel Blob so world changes survive redeploy
+  try {
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      const { put } = await import("@vercel/blob");
+      const store = {
+        characters: db.select().from(characters).all(),
+        worlds: db.select().from(worlds).all(),
+        stories: db.select().from(stories).all(),
+        illustrations: db.select().from(illustrations).all(),
+      };
+      await put("marshmallow-moon-store.json", JSON.stringify(store), {
+        access: "public",
+        contentType: "application/json",
+        token: process.env.BLOB_READ_WRITE_TOKEN,
+      });
+      console.log("✓ World update persisted to Vercel Blob");
+    }
+  } catch (e: any) {
+    console.warn("Blob persist failed:", e.message);
+  }
+
   return NextResponse.json(updated);
 }
 

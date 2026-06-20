@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { characters } from "@/lib/db/schema";
+import { characters, worlds, stories, illustrations } from "@/lib/db/schema";
 import { v4 as uuid } from "uuid";
 import { eq } from "drizzle-orm";
 
@@ -50,6 +50,28 @@ export async function POST(req: NextRequest) {
     db.insert(characters).values(character).run();
 
     const created = db.select().from(characters).where(eq(characters.id, character.id)).get();
+
+    // Persist FULL store to Vercel Blob so new characters survive redeploy
+    try {
+      if (process.env.BLOB_READ_WRITE_TOKEN) {
+        const { put } = await import("@vercel/blob");
+        const store = {
+          characters: db.select().from(characters).all(),
+          worlds: db.select().from(worlds).all(),
+          stories: db.select().from(stories).all(),
+          illustrations: db.select().from(illustrations).all(),
+        };
+        await put("marshmallow-moon-store.json", JSON.stringify(store), {
+          access: "public",
+          contentType: "application/json",
+          token: process.env.BLOB_READ_WRITE_TOKEN,
+        });
+        console.log("✓ New character persisted to Vercel Blob");
+      }
+    } catch (e: any) {
+      console.warn("Blob persist failed:", e.message);
+    }
+
     return NextResponse.json(created, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: "Failed to create character" }, { status: 500 });

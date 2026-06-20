@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 import { v4 as uuid } from "uuid";
 
+export const runtime = "nodejs";
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -28,6 +30,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Check Blob token is configured
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    if (!token) {
+      return NextResponse.json(
+        { error: "BLOB_READ_WRITE_TOKEN not configured. Add it in Vercel environment variables." },
+        { status: 500 }
+      );
+    }
+
     // Upload to Vercel Blob
     const ext = file.name.split(".").pop() || "png";
     const filename = `characters/${uuid()}.${ext}`;
@@ -35,7 +46,10 @@ export async function POST(req: NextRequest) {
     const blob = await put(filename, file, {
       access: "public",
       contentType: file.type,
+      token,
     });
+
+    console.log("✓ Reference image uploaded:", blob.url);
 
     return NextResponse.json({
       url: blob.url,
@@ -50,9 +64,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
