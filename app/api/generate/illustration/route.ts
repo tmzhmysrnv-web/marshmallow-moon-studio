@@ -76,11 +76,12 @@ export async function POST(req: NextRequest) {
         worldStylePrompt: composed.worldStylePrompt,
       });
     } else {
-      // Default: Replicate FLUX
+      // Default: Replicate — use cheaper FLUX Schnell
       imageOutput = await generateIllustration({
         prompt: finalPrompt,
         referenceImages: composed.referenceImages,
         worldStylePrompt: composed.worldStylePrompt,
+        model: "black-forest-labs/flux-schnell",
       });
     }
 

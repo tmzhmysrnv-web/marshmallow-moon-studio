@@ -8,6 +8,7 @@ export interface IllustrationInput {
   worldStylePrompt?: string;
   width?: number;
   height?: number;
+  model?: string;
 }
 
 async function callReplicateAPI(version: string, input: Record<string, unknown>) {
@@ -82,7 +83,7 @@ export async function generateIllustration(input: IllustrationInput) {
     inputData.image = input.referenceImages.slice(0, 8);
   }
 
-  return callReplicateAPI("black-forest-labs/flux-2-max", inputData);
+  return callReplicateAPI(input.model || "black-forest-labs/flux-schnell", inputData);
 }
 
 export async function generateIllustrationWithOpenAI(input: IllustrationInput) {
